@@ -9,7 +9,7 @@ import { BellIcon } from '@heroicons/react/16/solid';
 
 
 function page() {
-    const  user  = useAuth();
+    const { user } = useAuth();
   return (
     <div className="starting:opacity-0 w-[95%] mx-auto flex flex-col min-h-screen ease-in-out transition-all delay-200">
         <div className="flex flex-1 h-full  w-full  flex-col">
