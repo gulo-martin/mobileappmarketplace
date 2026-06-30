@@ -1,60 +1,94 @@
 "use client"
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import BGImage from "@/public/home.jpg"
 import Image from 'next/image';
 import { useAuth } from '@/app/hooks/AuthContext';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { db } from '@/app/lib/firebase';
 import { 
   BellIcon, 
   UserGroupIcon, 
   ShoppingBagIcon, 
   CurrencyDollarIcon,
-  ChartBarIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline';
+import { useRouter } from 'next/navigation';
+
+type ProductSummary = {
+    id: string;
+    name: string;
+    category: string;
+    price: number;
+    imageUrl?: string;
+    createdAt?: { seconds: number } | null;
+};
 
 function HomeScreen() {
     const { user } = useAuth();
+    const [recentProducts, setRecentProducts] = useState<ProductSummary[]>([]);
+    const [productStats, setProductStats] = useState({
+        totalProducts: 0,
+        activeProducts: 0,
+        revenue: 0,
+    });
+
+    useEffect(() => {
+        const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const products = snapshot.docs.slice(0, 5).map((doc) => ({
+                id: doc.id,
+                ...(doc.data() as Omit<ProductSummary, 'id'>),
+            })) as ProductSummary[];
+
+            const totalProducts = snapshot.size;
+            const activeProducts = snapshot.docs.filter((doc) => {
+                const data = doc.data() as { stock?: number };
+                return (data.stock ?? 0) > 0;
+            }).length;
+            const revenue = snapshot.docs.reduce((sum, doc) => {
+                const data = doc.data() as { price?: number };
+                return sum + (data.price ?? 0);
+            }, 0);
+
+            setRecentProducts(products);
+            setProductStats({ totalProducts, activeProducts, revenue });
+        });
+
+        return () => unsubscribe();
+    }, []);
     
-    // Mock data - replace with actual data
     const stats = [
         { 
-            title: 'Active Products', 
-            value: '247', 
-            trend: 'up',
-            color: 'blue'
-        },
-        { 
             title: 'Total Products', 
-            value: '1,284', 
+            value: productStats.totalProducts.toString(), 
             trend: 'up',
             color: 'purple'
         },
         { 
             title: 'Revenue', 
-            value: 'MK400,008,392', 
+            value: `MK${productStats.revenue.toLocaleString()}`, 
             trend: 'up',
             color: 'green'
         },
         { 
             title: 'Total Users', 
-            value: '3,842', 
+            value: user ? '1' : '0',
             trend: 'down',
             icon: UserGroupIcon,
             color: 'orange'
         },
     ];
 
-    const recentActivity = [
-        { user: 'Mike Johnson', action: 'updated', item: 'Product Pricing', time: '1 hour ago' },
-    ];
+    const router = useRouter();
 
     return (
         <div className="w-[95%] mx-auto h-full overflow-y-auto pb-8">
             {/* Welcome Banner */}
             <div className="relative w-full rounded-b-2xl overflow-hidden mb-6">
-                <div className="relative h-[280px] md:h-[320px] w-full">
+                <div className="relative h-[280px] md:h-[260px] w-full">
                     <Image 
                         src={BGImage} 
                         className="h-full w-full object-cover" 
@@ -147,27 +181,37 @@ function HomeScreen() {
                 {/* Recent Activity */}
                 <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+                        <h2 className="text-lg font-semibold text-gray-900">Recently Added Products</h2>
                         <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
                             View All
                         </button>
                     </div>
                     <div className="space-y-4">
-                        {recentActivity.map((activity, index) => (
-                            <div key={index} className="flex items-center gap-3 pb-4 border-b border-gray-50 last:border-0 last:pb-0">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white font-medium text-sm flex-shrink-0">
-                                    {activity.user.charAt(0)}
+                        {recentProducts.length === 0 ? (
+                            <p className="text-sm text-gray-500">No products added yet.</p>
+                        ) : (
+                            recentProducts.map((product) => (
+                                <div key={product.id} className="flex items-center gap-3 pb-4 border-b border-gray-50 last:border-0 last:pb-0">
+                                    <div className="relative h-12 w-12 overflow-hidden rounded-xl bg-gray-100">
+                                        {product.imageUrl ? (
+                                            <Image src={product.imageUrl} alt={product.name} fill className="object-cover" />
+                                        ) : (
+                                            <div className="flex h-full items-center justify-center text-xs font-semibold text-gray-400">
+                                                IMG
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-gray-800">
+                                            <span className="font-medium">{product.name}</span>
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                            {product.category} • ${product.price}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-gray-800">
-                                        <span className="font-medium">{activity.user}</span>
-                                        <span className="text-gray-500"> {activity.action} </span>
-                                        <span className="font-medium text-gray-700">{activity.item}</span>
-                                    </p>
-                                    <p className="text-xs text-gray-400">{activity.time}</p>
-                                </div>
-                            </div>
-                        ))}
+                            ))
+                        )}
                     </div>
                 </div>
 
@@ -175,7 +219,7 @@ function HomeScreen() {
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                     <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
                     <div className="space-y-3">
-                        <button className="w-full p-3 text-left bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors group">
+                        <button onClick={()=>{ router.push('/dashboard/products')}}  className="w-full p-3 text-left bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors group">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-blue-500 rounded-lg text-white group-hover:scale-110 transition-transform">
                                     <ShoppingBagIcon className="w-5 h-5" />
@@ -210,6 +254,11 @@ function HomeScreen() {
                         </button>
                     </div>
                 </div>
+            </div>
+
+            {/* bottom-text */}
+            <div className="mt-8 text-center text-sm text-gray-500">
+                &copy; {new Date().getFullYear()} ZipMarketPlace. All rights reserved.
             </div>
         </div>
     )

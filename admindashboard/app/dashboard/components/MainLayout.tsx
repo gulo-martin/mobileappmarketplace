@@ -33,7 +33,6 @@ function MainLayout() {
     const navigation = [
         { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
         { name: 'Products', href: '/dashboard/products', icon: ShoppingBagIcon },
-        { name: 'Payments', href: '/dashboard/payments', icon: CreditCardIcon },
         { name: 'My Settings', href: '/dashboard/settings', icon: Cog6ToothIcon },
     ]
 

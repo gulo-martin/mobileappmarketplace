@@ -74,4 +74,5 @@ class MainActivity : ComponentActivity() {
 
 data class BottomNavItem(val label: String, val route: String, val icon: ImageVector)
 
+//change th promotion banner in homeScreen it should be like this it should have a backgroud image and all the details shou.d be in the top of the image and also inclue and overlay to make the details more readable
 

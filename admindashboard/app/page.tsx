@@ -2,11 +2,11 @@
 
 import Image from "next/image";
 import BGImage from "@/public/home.jpg"
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from '@/app/lib/firebase';
-import { CheckCircleIcon, XCircleIcon, XMarkIcon } from "@heroicons/react/16/solid";
+import { CheckCircleIcon, XCircleIcon } from "@heroicons/react/16/solid";
 
 export default function Home() {
   const [password, setPassword] = useState<string>('');
@@ -17,92 +17,48 @@ export default function Home() {
 
   const router = useRouter();
 
-  const handleFormSubmit = async (e: any) => {
+  const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-   
+
     try {
       setLoading(true);
+      setError("");
+      setConfirm(false);
 
       if (!email && !password) {
-        setError('Please provide correct details');
-        setLoading(false);
-        // setTimeout(() => {
-        //   setError("")
-        //   setEmail("");
-        //   setPassword("");
-        //   setLoading(false);
-        // }, 3000);
-
+        setError("Please provide correct details");
         return;
       }
 
       if (!email) {
-        setError('Please enter a valid email');
-        setLoading(false);
-        // setTimeout(() => {
-        //   setError("")
-        //   setEmail("");
-        //   setPassword("");
-        //   setLoading(false);
-         
-        // }, 3000);
-
+        setError("Please enter a valid email");
         return;
       }
 
       if (!password) {
-        setError('Try entering you password');
-        setLoading(false);
-        // setTimeout(() => {
-        //   setError("")
-        //   setEmail("");
-        //   setPassword("");
-        //   setLoading(false);
-        // }, 3000);
-
+        setError("Please enter your password");
         return;
       }
 
-      // alert(200);
-      // setInterval(() => {
-      //   setEmail("");
-      //   setPassword("");
-      //   setLoading(false);
-      // }, 3000);
-
-
       const response = await signInWithEmailAndPassword(auth, email, password);
-      
-      if (response) {
-        setConfirm(true)
-        setConfirm(false)
+
+      if (response.user) {
+        setConfirm(true);
         setEmail("");
         setPassword("");
-        setLoading(false);
-        router.push('/dashboard');
+        router.push("/dashboard");
+      } else {
+        setConfirm(false);
+        setError("Wrong credentials");
       }
-
-      else {
-        setConfirm(false)
-        setEmail("");
-        setPassword("");
-        setLoading(false);
-        setError("wrong credentials");
-      }
-      
-
-     
-      
-    } catch (error) {
-      console.log('====================================');
-      alert(error);
-      console.log('====================================');
+    } catch (err) {
+      console.error(err);
+      setConfirm(false);
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
-      // setEmail("")
-      // setLoading(false)
-      // setConfirm(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="w-full starting:opacity-0 ease-in-out transition-all duration-300 grid grid-cols-1 md:grid-cols-2 min-h-screen items-start justify-center bg-zinc-50 font-sans ">
