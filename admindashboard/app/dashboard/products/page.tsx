@@ -42,6 +42,7 @@ function ProductsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [erroredImages, setErroredImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "products"), (snapshot) => {
@@ -67,6 +68,17 @@ function ProductsPage() {
     setFormData(emptyForm);
     setEditingId(null);
     setError("");
+  };
+
+  const normalizeImageUrl = (raw?: string) => {
+    if (!raw) return "";
+    const s = raw.trim();
+    if (!s) return "";
+    if (s.startsWith("//")) return `https:${s}`;
+    if (/^https?:\/\//i.test(s)) return s;
+    // if it looks like a hostname-only URL, prefix https
+    if (/^[^/]+\.[^/]+/.test(s)) return `https://${s}`;
+    return s;
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -181,8 +193,15 @@ function ProductsPage() {
               {products.map((product) => (
                 <article key={product.id} className="overflow-hidden rounded-[20px] border border-slate-200 bg-slate-50">
                   <div className="relative h-44 w-full bg-slate-200">
-                    {product.imageUrl ? (
-                      <Image src={product.imageUrl} alt={product.name} fill className="object-cover" />
+                    {normalizeImageUrl(product.imageUrl) && !erroredImages[product.id] ? (
+                      <Image
+                        src={normalizeImageUrl(product.imageUrl)}
+                        alt={product.name}
+                        fill
+                        className="object-cover"
+                        onError={() => setErroredImages((p) => ({ ...p, [product.id]: true }))}
+                        unoptimized
+                      />
                     ) : (
                       <div className="flex h-full items-center justify-center text-slate-400">
                         <PhotoIcon className="h-10 w-10" />
@@ -196,7 +215,7 @@ function ProductsPage() {
                         <p className="text-sm text-slate-500">{product.category}</p>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
-                        ${product.price}
+                        {`MWK ${Number(product.price).toLocaleString()}`}
                       </span>
                     </div>
                     <p className="text-sm text-slate-600 line-clamp-3">{product.description}</p>

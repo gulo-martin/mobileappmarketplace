@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "576895294525",
+    "project_id": "zipmarketplace-a4821",
+    "storage_bucket": "zipmarketplace-a4821.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:576895294525:android:e98e52fa3b113e343c9e54",
+        "android_client_info": {
+          "package_name": "com.example.zipstore"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "576895294525-tj2lc7f77lj00i8jnb2e3srff8rf7f3g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAF_mgt37n-7P5eX290R2-6eNnPqM_W2pM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "576895294525-tj2lc7f77lj00i8jnb2e3srff8rf7f3g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

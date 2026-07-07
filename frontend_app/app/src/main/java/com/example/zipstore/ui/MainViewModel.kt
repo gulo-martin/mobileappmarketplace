@@ -1,19 +1,26 @@
 package com.example.zipstore.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.zipstore.data.model.CartItem
 import com.example.zipstore.data.model.Product
 import com.example.zipstore.data.repository.ProductRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ProductRepository()
     private val auth = FirebaseAuth.getInstance()
+    private val sharedPreferences = application.getSharedPreferences("zipstore_prefs", Context.MODE_PRIVATE)
+    private val gson = Gson()
 
     private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _products.asStateFlow()
@@ -26,6 +33,7 @@ class MainViewModel : ViewModel() {
 
     init {
         fetchProducts()
+        loadCart()
     }
 
     private fun fetchProducts() {
@@ -34,6 +42,20 @@ class MainViewModel : ViewModel() {
                 _products.value = it
             }
         }
+    }
+
+    private fun loadCart() {
+        val cartJson = sharedPreferences.getString("cart_items", null)
+        if (cartJson != null) {
+            val type = object : TypeToken<List<CartItem>>() {}.type
+            val savedCart: List<CartItem> = gson.fromJson(cartJson, type)
+            _cart.value = savedCart
+        }
+    }
+
+    private fun saveCart() {
+        val cartJson = gson.toJson(_cart.value)
+        sharedPreferences.edit().putString("cart_items", cartJson).apply()
     }
 
     fun addToCart(product: Product) {
@@ -46,6 +68,7 @@ class MainViewModel : ViewModel() {
             currentCart.add(CartItem(product))
         }
         _cart.value = currentCart
+        saveCart()
     }
 
     fun removeFromCart(product: Product) {
@@ -60,10 +83,19 @@ class MainViewModel : ViewModel() {
             }
         }
         _cart.value = currentCart
+        saveCart()
+    }
+
+    fun deleteFromCart(product: Product) {
+        val currentCart = _cart.value.toMutableList()
+        currentCart.removeAll { it.product.id == product.id }
+        _cart.value = currentCart
+        saveCart()
     }
 
     fun clearCart() {
         _cart.value = emptyList()
+        saveCart()
     }
 
     fun toggleLike(product: Product) {
@@ -82,5 +114,18 @@ class MainViewModel : ViewModel() {
     fun logout() {
         auth.signOut()
         updateLoginStatus()
+    }
+
+    fun signInWithGoogle(idToken: String, onResult: (Boolean) -> Unit) {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    updateLoginStatus()
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            }
     }
 }

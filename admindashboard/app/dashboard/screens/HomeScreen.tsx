@@ -33,6 +33,17 @@ function HomeScreen() {
         activeProducts: 0,
         revenue: 0,
     });
+    const [erroredImages, setErroredImages] = useState<Record<string, boolean>>({});
+
+    const normalizeImageUrl = (raw?: string) => {
+        if (!raw) return "";
+        const s = raw.trim();
+        if (!s) return "";
+        if (s.startsWith("//")) return `https:${s}`;
+        if (/^https?:\/\//i.test(s)) return s;
+        if (/^[^/]+\.[^/]+/.test(s)) return `https://${s}`;
+        return s;
+    };
 
     useEffect(() => {
         const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
@@ -193,8 +204,15 @@ function HomeScreen() {
                             recentProducts.map((product) => (
                                 <div key={product.id} className="flex items-center gap-3 pb-4 border-b border-gray-50 last:border-0 last:pb-0">
                                     <div className="relative h-12 w-12 overflow-hidden rounded-xl bg-gray-100">
-                                        {product.imageUrl ? (
-                                            <Image src={product.imageUrl} alt={product.name} fill className="object-cover" />
+                                        {normalizeImageUrl(product.imageUrl) && !erroredImages[product.id] ? (
+                                            <Image
+                                                src={normalizeImageUrl(product.imageUrl)}
+                                                alt={product.name}
+                                                fill
+                                                className="object-cover"
+                                                onError={() => setErroredImages((p) => ({ ...p, [product.id]: true }))}
+                                                unoptimized
+                                            />
                                         ) : (
                                             <div className="flex h-full items-center justify-center text-xs font-semibold text-gray-400">
                                                 IMG

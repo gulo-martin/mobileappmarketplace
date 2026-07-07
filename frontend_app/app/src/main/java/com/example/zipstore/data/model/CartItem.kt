@@ -1,6 +1,6 @@
 package com.example.zipstore.data.model
 
 data class CartItem(
-    val product: Product,
-    val quantity: Int = 1
+    var product: Product = Product(),
+    var quantity: Int = 1
 )

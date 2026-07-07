@@ -1,11 +1,12 @@
 package com.example.zipstore.data.model
 
 data class Product(
-    val id: String = "",
-    val name: String = "",
-    val description: String = "",
-    val price: Double = 0.0,
-    val imageUrl: String = "",
-    val category: String = "",
-    val isLiked: Boolean = false
+    var id: String = "",
+    var name: String = "",
+    var description: String = "",
+    var price: Double = 0.0,
+    var imageUrl: String = "",
+    var category: String = "",
+    var rating: Double = 0.0,
+    var isLiked: Boolean = false
 )

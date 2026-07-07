@@ -2,12 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "firebasestorage.googleapis.com",
-      },
-    ],
+    // Skip Next.js image optimization so external URLs work without hostname config.
+    unoptimized: true,
+    // Allow SVGs when needed
+    dangerouslyAllowSVG: true,
   },
 };
 
