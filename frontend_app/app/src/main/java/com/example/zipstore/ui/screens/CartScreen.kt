@@ -23,6 +23,7 @@ import coil.compose.AsyncImage
 import com.example.zipstore.data.model.CartItem
 import com.example.zipstore.ui.MainViewModel
 import com.example.zipstore.ui.navigation.Screen
+import com.example.zipstore.ui.components.ZipStoreImage
 
 import java.text.NumberFormat
 import java.util.Locale
@@ -41,12 +42,34 @@ fun CartScreen(navController: NavController, viewModel: MainViewModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Shopping Cart") })
+            TopAppBar(
+                modifier = Modifier.fillMaxWidth(),
+                title = { Text("Shopping Cart", color = Color.White) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            )
         }
     ) { padding ->
         if (cartItems.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Your cart is empty")
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.ShoppingCart,
+                        contentDescription = null,
+                        modifier = Modifier.size(100.dp),
+                        tint = Color.LightGray
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Your cart is empty", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = { navController.navigate(Screen.Home.route) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Browse Products")
+                    }
+                }
             }
         } else {
             Column(modifier = Modifier.padding(padding)) {
@@ -82,7 +105,11 @@ fun CartScreen(navController: NavController, viewModel: MainViewModel) {
                         Button(
                             onClick = {
                                 if (isLoggedIn) {
-                                    navController.navigate(Screen.Checkout.route)
+                                    viewModel.checkout { success ->
+                                        if (success) {
+                                            navController.navigate(Screen.Checkout.route)
+                                        }
+                                    }
                                 } else {
                                     navController.navigate(Screen.Login.route)
                                 }
@@ -120,15 +147,12 @@ fun CartItemRow(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AsyncImage(
-                    model = item.product.imageUrl.takeIf { it.isNotBlank() } ?: com.example.zipstore.R.drawable.product,
+                ZipStoreImage(
+                    url = item.product.displayImage,
                     contentDescription = item.product.name,
                     modifier = Modifier
                         .size(100.dp)
-                        .background(Color.LightGray, MaterialTheme.shapes.medium),
-                    contentScale = ContentScale.Crop,
-                    error = painterResource(id = com.example.zipstore.R.drawable.logo),
-                    placeholder = painterResource(id = com.example.zipstore.R.drawable.logo)
+                        .background(Color.LightGray, MaterialTheme.shapes.medium)
                 )
                 
                 Spacer(modifier = Modifier.width(16.dp))

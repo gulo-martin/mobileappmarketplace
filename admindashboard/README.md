@@ -22,7 +22,9 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Dashboard Credentials
 
+
+
 ```bash
-email: 
-pass
+email: admin@gmail.com
+pass: admin123
 ```

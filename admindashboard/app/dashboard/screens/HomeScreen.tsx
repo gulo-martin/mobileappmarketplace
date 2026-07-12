@@ -1,18 +1,21 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import BGImage from "@/public/home.jpg"
 import Image from 'next/image';
 import { useAuth } from '@/app/hooks/AuthContext';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase';
+import { getDownloadURL, ref } from 'firebase/storage';
+import { db, storage } from '@/app/lib/firebase';
 import { 
   BellIcon, 
   UserGroupIcon, 
   ShoppingBagIcon, 
   CurrencyDollarIcon,
   ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon
+  ArrowTrendingDownIcon,
+  ShoppingCartIcon,
+  FireIcon,
 } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 
@@ -21,8 +24,16 @@ type ProductSummary = {
     name: string;
     category: string;
     price: number;
+    stock?: number;
     imageUrl?: string;
+    images?: string[] | string;
+    isActive?: boolean;
     createdAt?: { seconds: number } | null;
+    soldCount?: number;
+    unitsSold?: number;
+    salesCount?: number;
+    sold?: number;
+    quantitySold?: number;
 };
 
 function HomeScreen() {
@@ -31,9 +42,12 @@ function HomeScreen() {
     const [productStats, setProductStats] = useState({
         totalProducts: 0,
         activeProducts: 0,
-        revenue: 0,
+        inventoryValue: 0,
+        productsSold: 0,
+        bestSeller: 'No sales yet',
     });
     const [erroredImages, setErroredImages] = useState<Record<string, boolean>>({});
+    const [resolvedImageUrls, setResolvedImageUrls] = useState<Record<string, string>>({});
 
     const normalizeImageUrl = (raw?: string) => {
         if (!raw) return "";
@@ -44,6 +58,43 @@ function HomeScreen() {
         if (/^[^/]+\.[^/]+/.test(s)) return `https://${s}`;
         return s;
     };
+
+    const getRawFirstImage = useCallback((product: ProductSummary) => {
+        if (typeof product.imageUrl === "string" && product.imageUrl.trim()) {
+            return normalizeImageUrl(product.imageUrl);
+        }
+
+        if (!product.images) return "";
+        if (Array.isArray(product.images)) {
+            if (!product.images.length) return "";
+            return normalizeImageUrl(product.images[0]);
+        }
+        const parsed = product.images
+            .split(",")
+            .map((url) => url.trim())
+            .filter(Boolean);
+        return normalizeImageUrl(parsed[0] ?? "");
+    }, []);
+
+    const resolveGsUrl = async (raw: string) => {
+        if (!raw || !raw.startsWith("gs://")) return raw;
+
+        try {
+            return await getDownloadURL(ref(storage, raw));
+        } catch (err) {
+            console.error("Failed to resolve gs:// URL:", raw, err);
+            return "";
+        }
+    };
+
+    const getFirstImage = useCallback((product: ProductSummary) => {
+        const raw = getRawFirstImage(product);
+        if (!raw) return "";
+        if (raw.startsWith("gs://")) {
+            return resolvedImageUrls[product.id] || "";
+        }
+        return raw;
+    }, [getRawFirstImage, resolvedImageUrls]);
 
     useEffect(() => {
         const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
@@ -56,36 +107,118 @@ function HomeScreen() {
 
             const totalProducts = snapshot.size;
             const activeProducts = snapshot.docs.filter((doc) => {
-                const data = doc.data() as { stock?: number };
-                return (data.stock ?? 0) > 0;
+                const data = doc.data() as { isActive?: boolean };
+                return data.isActive === true;
             }).length;
-            const revenue = snapshot.docs.reduce((sum, doc) => {
-                const data = doc.data() as { price?: number };
-                return sum + (data.price ?? 0);
+            const inventoryValue = snapshot.docs.reduce((sum, doc) => {
+                const data = doc.data() as { price?: number; stock?: number };
+                return sum + ((data.price ?? 0) * (data.stock ?? 0));
             }, 0);
 
+            const salesSummary = snapshot.docs.reduce((summary, doc) => {
+                const data = doc.data() as { name?: string; soldCount?: number; unitsSold?: number; salesCount?: number; sold?: number; quantitySold?: number; };
+                const salesCandidates = [data.soldCount, data.unitsSold, data.salesCount, data.sold, data.quantitySold];
+                let salesCount = 0;
+
+                for (const candidate of salesCandidates) {
+                    if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 0) {
+                        salesCount = candidate;
+                        break;
+                    }
+
+                    if (typeof candidate === 'string') {
+                        const parsed = Number(candidate);
+                        if (Number.isFinite(parsed) && parsed >= 0) {
+                            salesCount = parsed;
+                            break;
+                        }
+                    }
+                }
+
+                summary.productsSold += salesCount;
+
+                if (salesCount > summary.bestSellerSales) {
+                    summary.bestSellerSales = salesCount;
+                    summary.bestSellerName = data.name || 'Unknown product';
+                }
+
+                return summary;
+            }, { productsSold: 0, bestSellerSales: -1, bestSellerName: 'No sales yet' });
+
             setRecentProducts(products);
-            setProductStats({ totalProducts, activeProducts, revenue });
+            setProductStats({
+                totalProducts,
+                activeProducts,
+                inventoryValue,
+                productsSold: salesSummary.productsSold,
+                bestSeller: salesSummary.bestSellerSales > 0 ? salesSummary.bestSellerName : 'No sales yet',
+            });
         });
 
         return () => unsubscribe();
     }, []);
-    
+
+    useEffect(() => {
+        const productsNeedingResolution = recentProducts.filter((product) => {
+            const raw = getRawFirstImage(product);
+            return raw.startsWith("gs://") && !resolvedImageUrls[product.id];
+        });
+
+        if (productsNeedingResolution.length === 0) return;
+
+        let active = true;
+        const loadUrls = async () => {
+            const resolved: Record<string, string> = {};
+            await Promise.all(
+                productsNeedingResolution.map(async (product) => {
+                    const raw = getRawFirstImage(product);
+                    const url = await resolveGsUrl(raw);
+                    if (url) {
+                        resolved[product.id] = url;
+                    }
+                })
+            );
+            if (!active) return;
+            setResolvedImageUrls((prev) => ({ ...prev, ...resolved }));
+        };
+
+        loadUrls();
+        return () => {
+            active = false;
+        };
+    }, [recentProducts, resolvedImageUrls, getRawFirstImage]);
+
     const stats = [
-        { 
-            title: 'Total Products', 
-            value: productStats.totalProducts.toString(), 
+        {
+            title: 'Total Products',
+            value: productStats.totalProducts.toString(),
             trend: 'up',
+            icon: ShoppingBagIcon,
             color: 'purple'
         },
-        { 
-            title: 'Revenue', 
-            value: `MK${productStats.revenue.toLocaleString()}`, 
+        {
+            title: 'Inventory Value',
+            value: `MK${productStats.inventoryValue.toLocaleString()}`,
             trend: 'up',
+            icon: CurrencyDollarIcon,
             color: 'green'
         },
-        { 
-            title: 'Total Users', 
+        {
+            title: 'Products Sold',
+            value: productStats.productsSold.toString(),
+            trend: 'up',
+            icon: ShoppingCartIcon,
+            color: 'blue'
+        },
+        {
+            title: 'Best Seller',
+            value: productStats.bestSeller,
+            trend: 'up',
+            icon: FireIcon,
+            color: 'pink'
+        },
+        {
+            title: 'Total Users',
             value: user ? '1' : '0',
             trend: 'down',
             icon: UserGroupIcon,
@@ -99,7 +232,7 @@ function HomeScreen() {
         <div className="w-[95%] mx-auto h-full overflow-y-auto pb-8">
             {/* Welcome Banner */}
             <div className="relative w-full rounded-b-2xl overflow-hidden mb-6">
-                <div className="relative h-[280px] md:h-[260px] w-full">
+                <div className="relative h-70 md:h-65 w-full">
                     <Image 
                         src={BGImage} 
                         className="h-full w-full object-cover" 
@@ -108,7 +241,7 @@ function HomeScreen() {
                     />
                     
                     {/* Gradient Overlay - Improved */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-blue-600/40"></div>
+                    <div className="absolute inset-0 bg-linear-to-r from-black/70 via-black/40 to-blue-600/40"></div>
                     
                     {/* Content */}
                     <div className="absolute  inset-0 flex flex-col justify-between p-6 md:p-10">
@@ -119,18 +252,18 @@ function HomeScreen() {
                                     3
                                 </span>
                             </button>
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 animate-pulse"></div>
+                            <div className="w-8 h-8 rounded-full bg-linear-to-r from-blue-400 to-purple-400 animate-pulse"></div>
                         </div>
 
                         <div>
                             <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 leading-tight">
                                 Welcome back, <br className="sm:hidden" />
-                                <span className="bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-transparent">
+                                <span className="bg-linear-to-r from-blue-200 to-purple-200 bg-clip-text text-transparent">
                                     {user?.displayName || user?.email?.split('@')[0] || 'User'}
                                 </span>
                             </h1>
                             <p className="text-white/80 text-sm md:text-base max-w-xl leading-relaxed">
-                                Here's what's happening with your marketplace today. Track your sales, manage products, and grow your business.
+                                Here&apos;s what&apos;s happening with your marketplace today. Track your sales, manage products, and grow your business.
                             </p>
                         </div>
                     </div>
@@ -138,20 +271,22 @@ function HomeScreen() {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+            <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6 mb-8">
                 {stats.map((stat, index) => {
-                    // const Icon = stat.icon;
+                    const Icon = stat.icon;
                     const colorClasses = {
                         blue: 'bg-blue-50 text-blue-600 border-blue-200',
                         purple: 'bg-purple-50 text-purple-600 border-purple-200',
                         green: 'bg-green-50 text-green-600 border-green-200',
                         orange: 'bg-orange-50 text-orange-600 border-orange-200',
+                        pink: 'bg-pink-50 text-pink-600 border-pink-200',
                     };
                     const borderColor = {
                         blue: 'hover:border-blue-300',
                         purple: 'hover:border-purple-300',
                         green: 'hover:border-green-300',
                         orange: 'hover:border-orange-300',
+                        pink: 'hover:border-pink-300',
                     };
 
                     return (
@@ -167,7 +302,7 @@ function HomeScreen() {
                                 <div className={`
                                     p-3 rounded-xl ${colorClasses[stat.color as keyof typeof colorClasses]}
                                 `}>
-                                    {/* <Icon className="w-6 h-6" /> */}
+                                    <Icon className="w-6 h-6" />
                                 </div>
                                 <div className={`
                                     flex items-center gap-1 text-xs font-medium
@@ -180,7 +315,7 @@ function HomeScreen() {
                                     )}
                                 </div>
                             </div>
-                            <h3 className="text-2xl font-bold text-gray-900">{stat.value}</h3>
+                            <h3 className="text-xl font-bold text-gray-900 line-clamp-2">{stat.value}</h3>
                             <p className="text-sm text-gray-500 mt-1">{stat.title}</p>
                         </div>
                     );
@@ -204,9 +339,9 @@ function HomeScreen() {
                             recentProducts.map((product) => (
                                 <div key={product.id} className="flex items-center gap-3 pb-4 border-b border-gray-50 last:border-0 last:pb-0">
                                     <div className="relative h-12 w-12 overflow-hidden rounded-xl bg-gray-100">
-                                        {normalizeImageUrl(product.imageUrl) && !erroredImages[product.id] ? (
+                                        {getFirstImage(product) && !erroredImages[product.id] ? (
                                             <Image
-                                                src={normalizeImageUrl(product.imageUrl)}
+                                                src={getFirstImage(product)}
                                                 alt={product.name}
                                                 fill
                                                 className="object-cover"
@@ -224,7 +359,7 @@ function HomeScreen() {
                                             <span className="font-medium">{product.name}</span>
                                         </p>
                                         <p className="text-xs text-gray-500">
-                                            {product.category} • ${product.price}
+                                            {product.category} • MK{product.price.toLocaleString()} • {product.isActive ? 'Active' : 'Inactive'}
                                         </p>
                                     </div>
                                 </div>

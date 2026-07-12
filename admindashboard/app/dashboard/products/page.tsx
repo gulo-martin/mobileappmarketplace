@@ -15,6 +15,9 @@ type Product = {
   category: string;
   stock: number;
   imageUrl?: string;
+  images?: string[] | string;
+  isActive?: boolean;
+  createdAt?: { seconds: number } | null;
 };
 
 type ProductForm = {
@@ -24,6 +27,7 @@ type ProductForm = {
   category: string;
   stock: string;
   imageUrl: string;
+  isActive: boolean;
 };
 
 const emptyForm: ProductForm = {
@@ -33,6 +37,7 @@ const emptyForm: ProductForm = {
   category: "",
   stock: "",
   imageUrl: "",
+  isActive: true,
 };
 
 function ProductsPage() {
@@ -43,6 +48,78 @@ function ProductsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [erroredImages, setErroredImages] = useState<Record<string, boolean>>({});
+  const [resolvedImageUrls, setResolvedImageUrls] = useState<Record<string, string>>({});
+  const [previewImageUrl, setPreviewImageUrl] = useState("");
+
+  function normalizeImageUrl(raw?: string) {
+    if (!raw) return "";
+
+    const s = raw.trim().replace(/^['"]|['"]$/g, "");
+    if (!s) return "";
+    if (s.startsWith("data:")) return s;
+    if (s.startsWith("//")) return `https:${s}`;
+
+    const urlMatch = s.match(/https?:\/\/[^\s"'<>]+/i);
+    if (urlMatch) {
+      const matchedUrl = urlMatch[0];
+      const url = new URL(matchedUrl);
+      const host = url.hostname.toLowerCase();
+
+      if (host === "ibb.co" || host === "www.ibb.co") {
+        const directImageMatch = matchedUrl.match(/https?:\/\/i\.ibb\.co\/[^"'\s]+/i);
+        if (directImageMatch) {
+          return directImageMatch[0];
+        }
+
+        return matchedUrl;
+      }
+
+      if (host === "imgbb.com" || host === "www.imgbb.com") {
+        return matchedUrl;
+      }
+
+      return matchedUrl;
+    }
+
+    if (/^[^/]+\.[^/]+/.test(s)) return `https://${s}`;
+    return s;
+  }
+
+  const resolveImageUrl = React.useCallback(async (raw?: string) => {
+    const normalized = normalizeImageUrl(raw);
+    if (!normalized) return "";
+
+    try {
+      const url = new URL(normalized);
+      const host = url.hostname.toLowerCase();
+
+      if (host === "ibb.co" || host === "www.ibb.co") {
+        const response = await fetch(`${normalized.replace(/\/$/, "")}/oembed.json`, {
+          headers: { Accept: "application/json" },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          return normalizeImageUrl(data?.url || data?.thumbnail_url || "");
+        }
+      }
+
+      if (host === "imgbb.com" || host === "www.imgbb.com") {
+        const response = await fetch(`${normalized.replace(/\/$/, "")}/oembed.json`, {
+          headers: { Accept: "application/json" },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          return normalizeImageUrl(data?.url || data?.thumbnail_url || "");
+        }
+      }
+    } catch {
+      // fall back to the original normalized URL
+    }
+
+    return normalized;
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "products"), (snapshot) => {
@@ -57,6 +134,52 @@ function ProductsPage() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveProducts = async () => {
+      const resolved: Record<string, string> = {};
+
+      for (const product of products) {
+        const resolvedUrl = await resolveImageUrl(product.imageUrl);
+        if (!cancelled && resolvedUrl) {
+          resolved[product.id] = resolvedUrl;
+        }
+      }
+
+      if (!cancelled) {
+        setResolvedImageUrls(resolved);
+      }
+    };
+
+    if (products.length > 0) {
+      void resolveProducts();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [products, resolveImageUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolvePreview = async () => {
+      const resolvedUrl = await resolveImageUrl(formData.imageUrl);
+      if (!cancelled) {
+        setPreviewImageUrl(resolvedUrl);
+      }
+    };
+
+    if (formData.imageUrl.trim()) {
+      void resolvePreview();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.imageUrl, resolveImageUrl]);
+
   const handleChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
@@ -70,16 +193,6 @@ function ProductsPage() {
     setError("");
   };
 
-  const normalizeImageUrl = (raw?: string) => {
-    if (!raw) return "";
-    const s = raw.trim();
-    if (!s) return "";
-    if (s.startsWith("//")) return `https:${s}`;
-    if (/^https?:\/\//i.test(s)) return s;
-    // if it looks like a hostname-only URL, prefix https
-    if (/^[^/]+\.[^/]+/.test(s)) return `https://${s}`;
-    return s;
-  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -93,7 +206,7 @@ function ProductsPage() {
       setSubmitting(true);
       setError("");
 
-      const imageUrl = formData.imageUrl.trim();
+      const imageUrl = normalizeImageUrl(formData.imageUrl);
 
       const payload = {
         name: formData.name,
@@ -101,7 +214,8 @@ function ProductsPage() {
         description: formData.description,
         category: formData.category,
         stock: Number(formData.stock || 0),
-        imageUrl: imageUrl || "",
+        imageUrl,
+        isActive: formData.isActive,
         updatedAt: serverTimestamp(),
       };
 
@@ -125,6 +239,7 @@ function ProductsPage() {
 
   const handleEdit = (product: Product) => {
     setEditingId(product.id);
+
     setFormData({
       name: product.name,
       price: String(product.price),
@@ -132,6 +247,7 @@ function ProductsPage() {
       category: product.category,
       stock: String(product.stock),
       imageUrl: product.imageUrl || "",
+      isActive: product.isActive ?? true,
     });
     setError("");
   };
@@ -148,7 +264,8 @@ function ProductsPage() {
   };
 
   return (
-    <div className="w-[95%] mx-auto space-y-6 py-4">
+    <div className="desktop-view-shell">
+      <div className="w-[95%] mx-auto space-y-6 py-4">
       <div className="relative overflow-hidden rounded-[28px]">
         <Image
           src={BGImage}
@@ -169,7 +286,7 @@ function ProductsPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-slate-800">Your products</h2>
@@ -190,62 +307,69 @@ function ProductsPage() {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {products.map((product) => (
-                <article key={product.id} className="overflow-hidden rounded-[20px] border border-slate-200 bg-slate-50">
-                  <div className="relative h-44 w-full bg-slate-200">
-                    {normalizeImageUrl(product.imageUrl) && !erroredImages[product.id] ? (
-                      <Image
-                        src={normalizeImageUrl(product.imageUrl)}
-                        alt={product.name}
-                        fill
-                        className="object-cover"
-                        onError={() => setErroredImages((p) => ({ ...p, [product.id]: true }))}
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-slate-400">
-                        <PhotoIcon className="h-10 w-10" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-3 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold text-slate-800">{product.name}</h3>
-                        <p className="text-sm text-slate-500">{product.category}</p>
-                      </div>
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
-                        {`MWK ${Number(product.price).toLocaleString()}`}
-                      </span>
+              {products.map((product) => {
+                const productImageUrl = resolvedImageUrls[product.id] || normalizeImageUrl(product.imageUrl);
+                const imageFailed = Boolean(erroredImages[product.id]);
+
+                return (
+                  <article key={product.id} className="overflow-hidden rounded-[20px] border border-slate-200 bg-slate-50">
+                    <div className="relative h-44 w-full bg-slate-200">
+                        <Image
+                          src={ imageFailed || !productImageUrl ? productImageUrl : productImageUrl}
+                          alt={product.name}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          width={200}
+                          height={200}
+                          onError={() => setErroredImages((prev) => ({ ...prev, [product.id]: true }))}
+                        />
+                   
                     </div>
-                    <p className="text-sm text-slate-600 line-clamp-3">{product.description}</p>
-                    <div className="flex items-center justify-between text-sm text-slate-500">
-                      <span>Stock: {product.stock}</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(product)}
-                          className="rounded-full bg-blue-50 p-2 text-blue-600 transition hover:bg-blue-100"
-                          aria-label={`Edit ${product.name}`}
-                        >
-                          <PencilSquareIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(product.id)}
-                          className="rounded-full bg-rose-50 p-2 text-rose-600 transition hover:bg-rose-100"
-                          aria-label={`Delete ${product.name}`}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
+
+                    <div className="space-y-3 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold text-slate-800">{product.name}</h3>
+                          <p className="text-sm text-slate-500">{product.category}</p>
+                        </div>
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
+                          {`MWK ${Number(product.price).toLocaleString()}`}
+                        </span>
+                      </div>
+
+                      <p className="text-sm text-slate-600 line-clamp-3">{product.description}</p>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
+                        <span>Stock: {product.stock}</span>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${product.isActive ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-600"}`}>
+                          {product.isActive ? "Active" : "Inactive"}
+                        </span>
+                        <div className="ml-auto flex gap-2">
+                          <button
+                            onClick={() => handleEdit(product)}
+                            className="rounded-full bg-blue-50 p-2 text-blue-600 transition hover:bg-blue-100"
+                            aria-label={`Edit ${product.name}`}
+                          >
+                            <PencilSquareIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(product.id)}
+                            className="rounded-full bg-rose-50 p-2 text-rose-600 transition hover:bg-rose-100"
+                            aria-label={`Delete ${product.name}`}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
 
-        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-slate-800">
@@ -341,24 +465,34 @@ function ProductsPage() {
               </div>
             </div>
 
+            <div className="flex items-center gap-3">
+              <input
+                id="isActive"
+                name="isActive"
+                type="checkbox"
+                checked={formData.isActive}
+                onChange={(e) => setFormData((prev) => ({ ...prev, isActive: e.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="isActive" className="text-sm font-medium text-slate-700">Active product</label>
+            </div>
+
             <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50 p-4">
               <label htmlFor="imageUrl" className="mb-2 block text-sm font-medium text-slate-700">Image URL</label>
               <input
                 id="imageUrl"
                 name="imageUrl"
-                type="url"
+                type="text"
                 value={formData.imageUrl}
                 onChange={handleChange}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 outline-none transition focus:border-blue-500"
                 placeholder="https://example.com/image.jpg"
               />
-              {formData.imageUrl ? (
+              {previewImageUrl ? (
                 <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <Image
-                    src={formData.imageUrl}
+                  <img
+                    src={previewImageUrl}
                     alt="Product preview"
-                    width={640}
-                    height={320}
                     className="h-40 w-full object-cover"
                   />
                 </div>
@@ -381,6 +515,7 @@ function ProductsPage() {
       <div className="mt-8 text-center text-sm text-gray-500">
           &copy; {new Date().getFullYear()} ZipMarketPlace. All rights reserved.
       </div>
+    </div>
     </div>
   );
 }

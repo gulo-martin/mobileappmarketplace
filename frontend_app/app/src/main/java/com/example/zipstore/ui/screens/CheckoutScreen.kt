@@ -21,6 +21,7 @@ fun CheckoutScreen(navController: NavController, viewModel: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
+                modifier = Modifier.fillMaxWidth(),
                 title = { Text("Checkout") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {

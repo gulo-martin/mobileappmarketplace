@@ -23,4 +23,37 @@ body {
   margin: 0;
   padding: 0;
   font-family: Arial, Helvetica, sans-serif;
+  background: #f8fafc;
+  overflow-x: hidden;
+}
+
+.desktop-view-shell {
+  min-width: 1024px;
+  width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 1023px) {
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+    background: linear-gradient(135deg, #0f172a, #1d4ed8);
+    color: #f8fafc;
+  }
+
+  .desktop-view-shell {
+    display: none;
+  }
+
+  body::before {
+    content: "This dashboard is optimized for laptops and larger screens.";
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.6;
+    max-width: 320px;
+  }
 }
